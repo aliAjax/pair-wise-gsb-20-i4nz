@@ -1,162 +1,133 @@
+import { useMemo, useState } from "react";
 import "./styles.css";
+import { AppProvider, useApp } from "./state";
+import { isFovCalibrated, isStitchFrozen } from "./domain/rules";
+import { FieldRegistry } from "./components/FieldRegistry";
+import { StitchWorkbench } from "./components/StitchWorkbench";
+import { MeasureLab } from "./components/MeasureLab";
+import { ArchivePanel } from "./components/ArchivePanel";
 
-const project = {
-  "id": "hxwl-06",
-  "port": 5106,
-  "title": "显微镜玻片观察",
-  "subtitle": "样本、多倍率视野与染色观察记录库",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#4338ca",
-    "#0d9488",
-    "#db2777"
-  ],
-  "domain": "生物显微观察",
-  "users": [
-    "实验课教师",
-    "学生",
-    "实验管理员"
-  ],
-  "metrics": [
-    "样本数",
-    "视野记录",
-    "染色方法",
-    "重点结构"
-  ],
-  "filters": [
-    "植物组织",
-    "动物组织",
-    "微生物",
-    "血液涂片"
-  ],
-  "fields": [
-    "样本名称",
-    "样本类型",
-    "染色方式",
-    "放大倍数",
-    "观察结构",
-    "视野描述"
-  ],
-  "records": [
-    [
-      "洋葱表皮",
-      "植物组织",
-      "碘液",
-      "400x",
-      "细胞壁清晰，细胞核可见"
-    ],
-    [
-      "人血涂片",
-      "血液涂片",
-      "瑞氏染色",
-      "1000x",
-      "红细胞分布均匀"
-    ],
-    [
-      "草履虫",
-      "微生物",
-      "活体观察",
-      "200x",
-      "纤毛运动明显"
-    ]
-  ]
-};
+const TABS = [
+  { id: "fields", label: "视野登记" },
+  { id: "stitch", label: "拼接工作台" },
+  { id: "measure", label: "测量校准" },
+  { id: "archive", label: "归档与复核" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
 
-const statusColors = ["status-ok", "status-watch", "status-danger"];
+function Dashboard() {
+  const app = useApp();
+  const [slideId, setSlideId] = useState(app.data.slides[0]?.id ?? "");
+  const [tab, setTab] = useState<TabId>("fields");
 
-function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <i className={statusColors[index % statusColors.length]} />
-    </article>
-  );
-}
+  const slide = app.data.slides.find((s) => s.id === slideId) ?? app.data.slides[0];
 
-function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  const metrics = useMemo(() => {
+    const fields = app.data.fields;
+    const calibrated = fields.filter(isFovCalibrated).length;
+    const stitches = app.data.stitches;
+    const frozen = stitches.filter(isStitchFrozen).length;
+    return [
+      { label: "玻片样本", value: String(app.data.slides.length) },
+      { label: "视野（已校准 / 总数）", value: `${calibrated} / ${fields.length}` },
+      { label: "拼接图（归档 / 总数）", value: `${frozen} / ${stitches.length}` },
+      { label: "测量记录", value: String(app.data.measurements.length) },
+      { label: "复核留档", value: String(app.data.reviews.length) },
+    ];
+  }, [app.data]);
+
+  if (!slide) {
+    return (
+      <main className="app-shell">
+        <p>暂无玻片数据。</p>
+      </main>
+    );
+  }
 
   return (
     <main className="app-shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">{project.id} · port {project.port}</p>
-          <h1>{project.title}</h1>
-          <p className="subtitle">{project.subtitle}</p>
+          <p className="eyebrow">hxwl-06 · port 5106</p>
+          <h1>视野拼接与测量校准台</h1>
+          <p className="subtitle">
+            每个视野登记物镜倍率、像素标尺与微米值；拼接整批校验、坐标唯一、方向冲突不覆盖；
+            测量按标尺快照换算；归档冻结，复核另存原因与旧版本。刷新后状态一致。
+          </p>
         </div>
         <div className="stack-card">
-          <span>技术栈</span>
-          <strong>{project.stack}</strong>
+          <span>分层</span>
+          <strong>数据 · 规则 · 界面</strong>
+          <span>React + Vite + TypeScript，localStorage 持久化</span>
         </div>
       </section>
 
-      <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
+      <section className="metrics-grid metrics-grid-5">
+        {metrics.map((m) => (
+          <article key={m.label} className="metric-card">
+            <span>{m.label}</span>
+            <strong>{m.value}</strong>
+            <i className="status-ok" />
+          </article>
         ))}
       </section>
 
-      <section className="workspace">
-        <aside className="panel narrow">
-          <h2>角色</h2>
+      <section className="panel slide-bar">
+        <div className="slide-selector">
+          <span className="bar-label">当前玻片</span>
           <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
+            {app.data.slides.map((s) => (
+              <button
+                key={s.id}
+                className={s.id === slide.id ? "chip-active" : ""}
+                onClick={() => setSlideId(s.id)}
+              >
+                {s.name}
+                <small>
+                  {s.category} · {s.stain}
+                </small>
+              </button>
             ))}
           </div>
-          <h2>筛选</h2>
-          <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
-            </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
+        </div>
+        <button
+          className="reset-btn"
+          onClick={() => {
+            if (window.confirm("重置为演示数据？当前所有修改将被清除。")) {
+              app.resetDemo();
+              setSlideId(app.data.slides[0]?.id ?? "");
+              setTab("fields");
+            }
+          }}
+        >
+          重置演示数据
+        </button>
       </section>
 
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <nav className="tab-bar">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={tab === t.id ? "tab-active" : ""}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "fields" && <FieldRegistry slide={slide} />}
+      {tab === "stitch" && <StitchWorkbench slide={slide} />}
+      {tab === "measure" && <MeasureLab slide={slide} />}
+      {tab === "archive" && <ArchivePanel slide={slide} />}
     </main>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <AppProvider>
+      <Dashboard />
+    </AppProvider>
+  );
+}
