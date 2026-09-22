@@ -1,84 +1,44 @@
 import "./styles.css";
+import { useState } from "react";
+import type { Fov, MosaicVersion, TabKey } from "./types";
+import { useBenchState } from "./useBenchState";
+import RegisterTab from "./components/RegisterTab";
+import StitchTab from "./components/StitchTab";
+import MeasureTab from "./components/MeasureTab";
+import ArchiveTab from "./components/ArchiveTab";
 
 const project = {
-  "id": "hxwl-06",
-  "port": 5106,
-  "title": "显微镜玻片观察",
-  "subtitle": "样本、多倍率视野与染色观察记录库",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#4338ca",
-    "#0d9488",
-    "#db2777"
-  ],
-  "domain": "生物显微观察",
-  "users": [
-    "实验课教师",
-    "学生",
-    "实验管理员"
-  ],
-  "metrics": [
-    "样本数",
-    "视野记录",
-    "染色方法",
-    "重点结构"
-  ],
-  "filters": [
-    "植物组织",
-    "动物组织",
-    "微生物",
-    "血液涂片"
-  ],
-  "fields": [
-    "样本名称",
-    "样本类型",
-    "染色方式",
-    "放大倍数",
-    "观察结构",
-    "视野描述"
-  ],
-  "records": [
-    [
-      "洋葱表皮",
-      "植物组织",
-      "碘液",
-      "400x",
-      "细胞壁清晰，细胞核可见"
-    ],
-    [
-      "人血涂片",
-      "血液涂片",
-      "瑞氏染色",
-      "1000x",
-      "红细胞分布均匀"
-    ],
-    [
-      "草履虫",
-      "微生物",
-      "活体观察",
-      "200x",
-      "纤毛运动明显"
-    ]
-  ]
+  id: "hxwl-06",
+  port: 5106,
+  title: "视野拼接与测量校准台",
+  subtitle:
+    "视野登记标尺校准 · 相邻视野整批校验拼接 · 标尺快照测量 · 归档冻结与复核版本",
+  stack: "React + Vite + TypeScript + CSS（数据 / 规则 / 界面分层）",
 };
 
-const statusColors = ["status-ok", "status-watch", "status-danger"];
-
-function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <i className={statusColors[index % statusColors.length]} />
-    </article>
-  );
-}
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "register", label: "① 视野登记" },
+  { key: "stitch", label: "② 视野拼接" },
+  { key: "measure", label: "③ 测量校准" },
+  { key: "archive", label: "④ 归档复核" },
+];
 
 function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  const { state, setState, reset } = useBenchState();
+  const [tab, setTab] = useState<TabKey>("register");
+
+  const calibrated = state.fovs.filter(
+    (f: Fov) => typeof f.scalePixels === "number" && typeof f.scaleMicrons === "number"
+  ).length;
+  const activeMosaics = state.mosaics.filter((m: MosaicVersion) => m.status !== "history").length;
+  const archived = state.mosaics.filter((m: MosaicVersion) => m.status === "archived").length;
+
+  const metrics = [
+    { label: "登记视野", value: state.fovs.length, cls: "status-ok" },
+    { label: "已校准视野", value: calibrated, cls: "status-ok" },
+    { label: "在档拼接图", value: activeMosaics, cls: "status-watch" },
+    { label: "已冻结 / 测量", value: `${archived} / ${state.measurements.length}`, cls: "status-danger" },
+  ];
 
   return (
     <main className="app-shell">
@@ -89,72 +49,46 @@ function App() {
           <p className="subtitle">{project.subtitle}</p>
         </div>
         <div className="stack-card">
-          <span>技术栈</span>
+          <span>技术栈与分层</span>
           <strong>{project.stack}</strong>
+          <button onClick={reset} className="reset-btn">重置为示例数据</button>
         </div>
       </section>
 
       <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
+        {metrics.map((m) => (
+          <article key={m.label} className="metric-card">
+            <span>{m.label}</span>
+            <strong>{m.value}</strong>
+            <i className={m.cls} />
+          </article>
         ))}
       </section>
 
-      <section className="workspace">
-        <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
-            ))}
-          </div>
-          <h2>筛选</h2>
-          <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
-            ))}
-          </div>
-        </aside>
+      <nav className="tab-bar">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            className={`tab-btn ${tab === t.key ? "active" : ""}`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
-            </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+      {tab === "register" && <RegisterTab state={state} setState={setState} />}
+      {tab === "stitch" && <StitchTab state={state} setState={setState} />}
+      {tab === "measure" && <MeasureTab state={state} setState={setState} />}
+      {tab === "archive" && <ArchiveTab state={state} setState={setState} />}
 
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <footer className="rules-foot">
+        <p>
+          规则：标尺缺失 / 倍率不匹配 / 相邻重叠不足 → 整批拒绝并逐视野列因；
+          同一坐标只能归入一个拼接图，方向冲突不覆盖原图；测量按标尺快照冻结，
+          事后改倍率不重算；归档后冻结，复核另存原因与旧版本；刷新后状态一致。
+        </p>
+      </footer>
     </main>
   );
 }
